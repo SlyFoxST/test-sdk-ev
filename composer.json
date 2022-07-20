@@ -1,7 +1,6 @@
 {
     "name": "sdk-php/evolv-sdk",
     "description": "This is the official JavPHP client for the Evolv Technologies optimization platform.",
-    "type": "library",
     "minimum-stability": "dev",
     "require": {
         "php": ">=7.4",
