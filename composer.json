@@ -23,7 +23,6 @@
             "name": "Evolv"
         }
     ],
-    "minimum-stability": "stable",
     "config": {
         "allow-plugins": {
             "symfony/flex": true,
