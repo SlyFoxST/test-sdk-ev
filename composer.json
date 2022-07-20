@@ -3,6 +3,7 @@
     "description": "This is the official JavPHP client for the Evolv Technologies optimization platform.",
     "type": "library",
     "version": "1.0.0",
+    "minimum-stability": "dev",
     "require": {
         "php": ">=7.4",
         "another-vendor/package": "1.*"
