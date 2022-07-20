@@ -11,6 +11,7 @@
         "phpdocumentor/phpdocumentor":  "v3.1.2",
         "phpdocumentor/shim": "3.1.2"
     },
+    "minimum-stability": "dev",
     "license": "GPL-3.0-only",
     "autoload": {
         "psr-4": {
