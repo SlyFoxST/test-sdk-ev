@@ -15,9 +15,6 @@ Install Lodash-PHP through composer:
 <h2>Usage</h2>
 
 ```php
-<?php here_pagecontent(); ?>
-```
-<code>
   <?php
 
   declare (strict_types=1);
@@ -29,6 +26,4 @@ Install Lodash-PHP through composer:
   require 'vendor/autoload.php';
 
   $client = new EvolvClient($environment, $uid, $endpoint);
-  
-  ?>
-</code>
+```
