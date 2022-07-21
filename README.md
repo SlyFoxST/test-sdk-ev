@@ -13,9 +13,7 @@ Install Lodash-PHP through composer:
 <code>https://packagist.org/packages/sdk-php/evolv-sdk</code>
 
 <h2>Usage</h2>
-
-<code>
-  <?php
+«`{php}<пробел>{  <?php
 
   declare (strict_types=1);
 
@@ -27,5 +25,5 @@ Install Lodash-PHP through composer:
 
   $client = new EvolvClient($environment, $uid, $endpoint);
   
-  ?>
-</code>
+  ?>}«`
+
