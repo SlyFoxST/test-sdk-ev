@@ -30,5 +30,12 @@ Install Lodash-PHP through composer:
 
 ```php
   <?php
+
   $client = new EvolvClient($environment, $uid, $endpoint);
 ```
+
+<h2>About Evolv and the Ascend Product</h2>
+
+Evolv Delivers Autonomous Optimization Across Web & Mobile.
+
+You can find out more by visiting: <a href="https://www.evolv.ai/">https://www.evolv.ai/</a>
