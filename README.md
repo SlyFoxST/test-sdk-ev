@@ -27,3 +27,5 @@ Install Lodash-PHP through composer:
 
   $client = new EvolvClient($environment, $uid, $endpoint);
 ```
+
+<h2>Installation</h2>
