@@ -2,9 +2,8 @@
 
 declare (strict_types=1);
 
-use  App\EvolvClient;
+use  Evolv\EvolvClient;
 
-require_once __DIR__ . '/../App/EvolvClient.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 function display($arr, $title = null)

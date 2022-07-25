@@ -74,7 +74,6 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
             'Symfony\\Bundle\\MonologBundle\\' => 29,
             'Symfony\\Bundle\\FrameworkBundle\\' => 31,
             'Symfony\\Bridge\\Monolog\\' => 23,
-            'SdkPhp\\EvolvSdk\\' => 16,
         ),
         'P' => 
         array (
@@ -111,6 +110,10 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         array (
             'Flyfinder\\' => 10,
         ),
+        'E' => 
+        array (
+            'Evolv\\' => 6,
+        ),
         'D' => 
         array (
             'Doctrine\\Instantiator\\' => 22,
@@ -124,8 +127,8 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         'phpDocumentor\\Reflection\\' => 
         array (
             0 => __DIR__ . '/..' . '/phpdocumentor/reflection-common/src',
-            1 => __DIR__ . '/..' . '/phpdocumentor/type-resolver/src',
-            2 => __DIR__ . '/..' . '/phpdocumentor/reflection-docblock/src',
+            1 => __DIR__ . '/..' . '/phpdocumentor/reflection-docblock/src',
+            2 => __DIR__ . '/..' . '/phpdocumentor/type-resolver/src',
         ),
         'phpDocumentor\\Guides\\' => 
         array (
@@ -141,9 +144,9 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         ),
         'phpDocumentor\\' => 
         array (
-            0 => __DIR__ . '/..' . '/phpdocumentor/shim/src',
+            0 => __DIR__ . '/..' . '/phpdocumentor/phpdocumentor/src/phpDocumentor',
             1 => __DIR__ . '/..' . '/phpdocumentor/reflection/src/phpDocumentor',
-            2 => __DIR__ . '/..' . '/phpdocumentor/phpdocumentor/src/phpDocumentor',
+            2 => __DIR__ . '/..' . '/phpdocumentor/shim/src',
         ),
         'Webmozart\\Assert\\' => 
         array (
@@ -285,10 +288,6 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         array (
             0 => __DIR__ . '/..' . '/symfony/monolog-bridge',
         ),
-        'SdkPhp\\EvolvSdk\\' => 
-        array (
-            0 => __DIR__ . '/../..' . '/App',
-        ),
         'Psr\\Log\\' => 
         array (
             0 => __DIR__ . '/..' . '/psr/log/Psr/Log',
@@ -327,8 +326,8 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         ),
         'League\\Uri\\' => 
         array (
-            0 => __DIR__ . '/..' . '/league/uri-interfaces/src',
-            1 => __DIR__ . '/..' . '/league/uri/src',
+            0 => __DIR__ . '/..' . '/league/uri/src',
+            1 => __DIR__ . '/..' . '/league/uri-interfaces/src',
         ),
         'League\\Tactician\\Logger\\' => 
         array (
@@ -369,6 +368,10 @@ class ComposerStaticInit6a9f91249e887cfffc8565234daa7926
         'Flyfinder\\' => 
         array (
             0 => __DIR__ . '/..' . '/phpdocumentor/flyfinder/src',
+        ),
+        'Evolv\\' => 
+        array (
+            0 => __DIR__ . '/../..' . '/App',
         ),
         'Doctrine\\Instantiator\\' => 
         array (

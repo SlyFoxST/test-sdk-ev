@@ -8,14 +8,12 @@ use Evolv\EvolvContext;
 use Evolv\Predicate;
 use Evolv\HttpClient;
 
-use function App\Utils\waitFor;
-use function App\Utils\emit;
-use function App\Utils\flattenKeys;
-use function App\Utils\filter;
-use function App\Utils\getValueForKey;
-use function App\Utils\prune;
-
-
+use function Evolv\Utils\waitFor;
+use function Evolv\Utils\emit;
+use function Evolv\Utils\flattenKeys;
+use function Evolv\Utils\filter;
+use function Evolv\Utils\getValueForKey;
+use function Evolv\Utils\prune;
 
 require_once __DIR__ . '/Utils/flattenKeys.php';
 require_once __DIR__ . '/Utils/filter.php';
@@ -293,7 +291,7 @@ class EvolvStore
     }
 
     public function initialize(EvolvContext $context)
-    {
+    {require_once __DIR__ . '/Utils/waitForIt.php';
         if ($this->initialized) {
             throw new \Exception('Evolv: The store has already been initialized.');
         }

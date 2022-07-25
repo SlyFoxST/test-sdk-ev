@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App;
+namespace Evolv;
 
-use function App\Utils\getValueForKey;
-use function App\Utils\setKeyToValue;
-use function App\Utils\removeValueForKey;
-use function App\Utils\emit;
-use function App\Utils\flatten;
+use function Evolv\Utils\getValueForKey;
+use function Evolv\Utils\setKeyToValue;
+use function Evolv\Utils\removeValueForKey;
+use function Evolv\Utils\emit;
+use function Evolv\Utils\flatten;
 require_once __DIR__ . '/Utils/getValueForKey.php';
 require_once __DIR__ . '/Utils/setKeyToValue.php';
 require_once __DIR__ . '/Utils/removeValueForKey.php';
@@ -47,7 +47,7 @@ class EvolvContext
     }
 
     public function initialize($uid, $remoteContext = [], $localContext = [])
-    {
+    {require_once __DIR__ . '/Utils/waitForIt.php';
         if ($this->initialized) {
             throw new \Exception('Evolv: The context is already initialized');
         }
@@ -151,7 +151,7 @@ class EvolvContext
      *
      * Note: This will cause the effective genome to be recomputed.
      *
-     * @param object $update  The values to update the context with.
+     * @param update {Object} The values to update the context with.
      * @param local {Boolean} If true, the values will only be added to the localContext.
      */
     public function update(array $update, $local = false) {
@@ -187,8 +187,8 @@ class EvolvContext
     /**
      * Checks if the specified key is currently defined in the context.
      *
-     * @param array $key The key to check.
-     * @returns boolean True if the key has an associated value in the context.
+     * @param key The key to check.
+     * @returns {boolean} True if the key has an associated value in the context.
      */
     public function contains(string $key)
     {
@@ -200,11 +200,11 @@ class EvolvContext
     /**
      * Adds value to specified array in context. If array doesnt exist its created and added to.
      *
-     * @param string $key The array to add to.
-     * @param array $value Value to add to the array.
-     * @param boolean $local  If true, the value will only be added to the localContext.
-     * @param number $limit  Max length of array to maintain.
-     * @returns boolean  True if value was successfully added.
+     * @param key The array to add to.
+     * @param value Value to add to the array.
+     * @param local {Boolean} If true, the value will only be added to the localContext.
+     * @param limit {Number} Max length of array to maintain.
+     * @returns {boolean} True if value was successfully added.
      */
     public function pushToArray(string $key, $value, $local = false, $limit = null)
     {

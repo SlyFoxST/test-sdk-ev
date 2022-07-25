@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace  Evolv;
+namespace Evolv;
 
 use Evolv\EvolvContext;
 use Evolv\EvolvStore;
 use Evolv\Beacon;
 
-use function App\Utils\waitFor;
-use function App\Utils\emit;
+use function Evolv\Utils\waitFor;
+use function Evolv\Utils\emit;
 
-require_once __DIR__ . '/Utils/waitForIt.php';
+require __DIR__ . '/../vendor/autoload.php';
 
 class EvolvClient
 {
@@ -48,7 +48,7 @@ class EvolvClient
      */
 
     public function initialize(string $uid, array $remoteContext = [], array $localContext = [])
-    {
+    {require_once __DIR__ . '/Utils/waitForIt.php';
         if ($this->initialized) {
             throw new \Exception('Evolv: Client is already initialized');
         }

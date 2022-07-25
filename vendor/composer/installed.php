@@ -3,7 +3,7 @@
         'name' => 'sdk-php/evolv-sdk',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '8977c99845a33ae2b1331b24af1cb81ed5e90195',
+        'reference' => '1d2a57e03726d0e3d52b9f4ce2c0e38d155991c2',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -433,8 +433,8 @@
         'psr/log-implementation' => array(
             'dev_requirement' => true,
             'provided' => array(
-                0 => '1.0|2.0',
-                1 => '1.0.0 || 2.0.0 || 3.0.0',
+                0 => '1.0.0 || 2.0.0 || 3.0.0',
+                1 => '1.0|2.0',
             ),
         ),
         'psr/simple-cache-implementation' => array(
@@ -446,7 +446,7 @@
         'sdk-php/evolv-sdk' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '8977c99845a33ae2b1331b24af1cb81ed5e90195',
+            'reference' => '1d2a57e03726d0e3d52b9f4ce2c0e38d155991c2',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
