@@ -2,18 +2,15 @@
 
 declare(strict_types=1);
 
-namespace App;
+namespace  Evolv;
 
-use App\EvolvContext;
-use App\EvolvStore;
-use App\Beacon;
+use Evolv\EvolvContext;
+use Evolv\EvolvStore;
+use Evolv\Beacon;
 
 use function App\Utils\waitFor;
 use function App\Utils\emit;
 
-require __DIR__ . '/../vendor/autoload.php';
-require_once __DIR__ . '/EvolvStore.php';
-require_once __DIR__ . '/Beacon.php';
 require_once __DIR__ . '/Utils/waitForIt.php';
 
 class EvolvClient

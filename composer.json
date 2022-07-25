@@ -10,7 +10,7 @@
     "license": "GPL-3.0-only",
     "autoload": {
         "psr-4": {
-            "SdkPhp\\EvolvSdk\\": "App/"
+            "Evolv\\": "./App"
         }
     },
     "authors": [
