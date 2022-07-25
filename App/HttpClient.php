@@ -1,7 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
+namespace App;
+
 class HttpClient {
-    public function request(string $url) {
+    public function request(string $url)
+    {
         $opts = array(
             'https' => array(
                 'method' => "GET",
@@ -17,6 +22,5 @@ class HttpClient {
         }
 
         return $response;
-        // return json_decode($response, true);
     }
 }

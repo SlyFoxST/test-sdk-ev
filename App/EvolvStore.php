@@ -1,131 +1,417 @@
 <?php
 
-namespace App\EvolvStore;
+declare(strict_types=1);
 
-use  App\EvolvContext\Context;
-use  App\EvolvPredicate\Predicate;
-use  App\EvolvBeacon\Beacon;
-use HttpClient;
-use phpDocumentor\Reflection\Types\Boolean;
+namespace App;
 
-require_once __DIR__ . '/EvolvOptions.php';
+use App\EvolvContext;
+use App\Predicate;
+use App\HttpClient;
+
+use function App\Utils\waitFor;
+use function App\Utils\emit;
+use function App\Utils\flattenKeys;
+use function App\Utils\filter;
+use function App\Utils\getValueForKey;
+use function App\Utils\prune;
+
 require_once __DIR__ . '/EvolvContext.php';
-require_once __DIR__ . '/EvolvPredicate.php';
+require_once __DIR__ . '/Predicate.php';
+require_once __DIR__ . '/HttpClient.php';
+require_once __DIR__ . '/Utils/flattenKeys.php';
+require_once __DIR__ . '/Utils/filter.php';
+require_once __DIR__ . '/Utils/prune.php';
+require_once __DIR__ . '/Utils/getValueForKey.php';
+require_once __DIR__ . '/Utils/waitForIt.php';
 
-class Store
+const CONFIG_SOURCE = 'config';
+const GENOME_SOURCE = 'genome';
+
+const GENOME_REQUEST_SENT = 'genome.request.sent';
+const CONFIG_REQUEST_SENT = 'config.request.sent';
+const GENOME_REQUEST_RECEIVED = 'genome.request.received';
+const CONFIG_REQUEST_RECEIVED = 'config.request.received';
+const REQUEST_FAILED = 'request.failed';
+const GENOME_UPDATED = 'genome.updated';
+const CONFIG_UPDATED = 'config.updated';
+const EFFECTIVE_GENOME_UPDATED = 'effective.genome.updated';
+const STORE_DESTROYED = 'store.destroyed';
+
+
+function startsWith( $haystack, $needle ) {
+    $length = strlen( $needle );
+    return substr( $haystack, 0, $length ) === $needle;
+}
+
+function endsWith( $haystack, $needle ) {
+    $length = strlen( $needle );
+    if( !$length ) {
+        return true;
+    }
+    return substr( $haystack, -$length ) === $needle;
+}
+
+function array_some(array $array, callable $filter) {
+    foreach ($array as $value) {
+        if ($filter($value)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+class EvolvStore
 {
-    /**
-     * @ignore
-     */
-    public $version;
-    /**
-     * @ignore
-     */
-    public $prefix;
-    /**
-     * @ignore
-     */
-    public $keyId;
-    /**
-     * @ignore
-     */
-    public $key;
+    private HttpClient $httpClient;
+    private bool $initialized = false;
+    private string $environment;
+    private string $endpoint;
+    private EvolvContext $context;
+    private Predicate $predicate;
 
-    /**
-     * @ignore
-     */
-    public $genomeKeyStates = [];
-    /**
-     * @ignore
-     */
-    public $configKeyStates = [];
-    /**
-     * @ignore
-     */
-    public $context;
-    /**
-     * @ignore
-     */
-    public $clientContext = null;
-    /**
-     * @ignore
-     */
-    public $initialized = false;
-    /**
-     * @ignore
-     */
-    public $waitingToPull = false;
-    /**
-     * @ignore
-     */
-    public $waitingToPullImmediate = true;
-    /**
-     * @ignore
-     */
-    public $genomes = [];
-    /**
-     * @ignore
-     */
-    public $effectiveGenome = [];
-    /**
-     * @ignore
-     */
-    public $allocations = null;
-    /**
-     * @ignore
-     */
     public $config = null;
-    /**
-     * @ignore
-     */
-    public $current = [];
-    /**
-     * @ignore
-     */
-    public $keys;
-    /**
-     * @ignore
-     */
-    public $value;
-    /**
-     * @ignore
-     */
-    public $local;
-    /**
-     * @ignore
-     */
-    public $get = [];
-    /**
-     * @ignore
-     */
-    public $remoteContext;
-    /**
-     * @ignore
-     */
-    public $localContext;
-    /**
-     * @ignore
-     */
-    public $data;
-    /**
-     * @ignore
-     */
-    public $flesh_data = [];
+    public $allocations = null;
+    public $effectiveGenome = null;
+    private $configFailed = false;
+    private $genomeFailed = false;
+    private $genomes = [];
+    private $reevaluatingContext = false;
 
-    /**
-     * @ignore
-     */
-    public function pull($environment, $uid, $endpoint)
+    public $genomeKeyStates = [
+        'needed' => [],
+        'requested' => [],
+        'experiments' => []
+    ];
+    public $configKeyStates = [
+        'needed' => [],
+        'requested' => [],
+        'experiments' => []
+    ];
+    public array $activeEids = [];
+    public array $activeKeys = [];
+    public array $activeVariants = [];
+
+    private array $subscriptions = [];
+
+    public function __construct(string $environment, string $endpoint)
     {
-        $httpClient = new HttpClient();
+        $this->environment = $environment;
+        $this->endpoint = $endpoint;
 
-        $allocationUrl = $endpoint . '/' . $environment . '/' . $uid . '/allocations';
-        $configUrl = $endpoint . '/' . $environment . '/' . $uid . '/configuration.json';
+        $this->httpClient = new HttpClient();
+        $this->predicate = new Predicate();
+    }
 
-        $arr_location = $httpClient->request($allocationUrl);
-        $arr_config = $httpClient->request($configUrl);
-        $arr_location = json_decode($arr_location, true);
+    private function evaluateBranch(array $context, array $config, string $prefix, array &$disabled, array &$entry)
+    {
+        if (!isset($config) || !is_array($config)) {
+            return;
+        }
+
+        if (isset($config['_predicate'])) {
+            $result = $this->predicate->evaluate($context, $config['_predicate']);
+            if ($result['rejected']) {
+                $disabled[] = $prefix;
+                return;
+            }
+        }
+
+        if (isset($config['_is_entry_point']) && $config['_is_entry_point'] === true) {
+            $entry[] = $prefix;
+        }
+
+        $keys = array_filter(array_keys($config), function($key) { return !startsWith($key, '_'); });
+    
+        foreach($keys as $key) {
+            $this->evaluateBranch($context, $config[$key], $prefix ? ($prefix . '.' . $key) : $key, $disabled, $entry);
+        }
+    }
+
+    private function evaluatePredicates(array $context, array $config) {
+        $result = [];
+
+        if (!isset($config['_experiments']) || !count($config['_experiments'])) {
+            return $result;
+        }
+
+        foreach($config['_experiments'] as $exp) {
+            $evaluableConfig = $exp;
+            unset($evaluableConfig['id']);
+            $expResult = [
+                'disabled' => [],
+                'entry' => []
+            ];
+
+            $this->evaluateBranch($context, $evaluableConfig, '', $expResult['disabled'], $expResult['entry']);
+            $result[$exp['id']] = $expResult;
+        }
+
+        return $result;
+    }
+
+    private function getActiveAndEntryExperimentKeyStates(array $results, array $keyStatesLoaded)
+    {
+        $expKeyStates = [
+            'active' => [],
+            'entry' => []
+        ];
+
+        foreach($keyStatesLoaded as $key) {
+            $active = !array_some($results['disabled'], function($disabledKey) use ($key) {
+                return startsWith($key, $disabledKey);
+            });
+
+            if ($active) {
+                $expKeyStates['active'][] = $key;
+                $entry = array_some($results['entry'], function($entryKey) use ($key) {
+                    return startsWith($key, $entryKey);
+                });
+
+                if ($entry) {
+                    $expKeyStates['entry'][] = $key;
+                }
+            }
+        }
+
+        return $expKeyStates;
+    }
+
+    private function evaluateAllocationPredicates()
+    {
+        // TODO: not implemented yet
+    }
+
+    private function setActiveAndEntryKeyStates()
+    {
+        $results = $this->evaluatePredicates($this->context->resolve(), $this->config);
+
+        foreach($results as $eid => $expResults) {
+            $expConfigKeyStates = &$this->configKeyStates['experiments'][$eid];
+            if (!isset($expConfigKeyStates)) {
+                return;
+            }
+
+            $expConfigLoaded = &$expConfigKeyStates['loaded'];
+
+            $loadedKeys = [];
+
+            if (isset($expConfigLoaded)) {
+                foreach($expConfigLoaded as $key) {
+                    $loadedKeys[] = $key;
+                }
+            }
+
+            $newExpKeyStates = $this->getActiveAndEntryExperimentKeyStates($expResults, $loadedKeys);
+
+            $activeKeyStates = [];
+            foreach($newExpKeyStates['active'] as $key) {
+                $activeKeyStates[] = $key;
+            }
+
+            $allocation = array_filter($this->allocations, function($a) use ($eid) { return $a['eid'] === $eid; })[0];
+            if (isset($allocation)) {
+                $this->evaluateAllocationPredicates();
+            }
+
+            $entryKeyStates = [];
+
+            foreach($newExpKeyStates['entry'] as $key) {
+                $entryKeyStates[] = $key;
+            }
+
+            $expConfigKeyStates['active'] = $activeKeyStates;
+            $expConfigKeyStates['entry'] = $entryKeyStates;
+        }
+    }
+
+    private function generateEffectiveGenome(array $expsKeyStates, $genomes)
+    {
+        $effectiveGenome = [];
+        $activeEids = [];
+
+        foreach($expsKeyStates as $eid => $expKeyStates) {
+            $active = $expKeyStates['active'];
+            if (array_key_exists($eid, $genomes) && $active) {
+                $activeGenome = filter($genomes[$eid], $active);
+
+                if (count(array_keys($activeGenome))) {
+                    $activeEids[] = $eid;
+                    $effectiveGenome = array_merge_recursive($effectiveGenome, $activeGenome);
+                }
+            }
+        }
+
+        return [
+            'effectiveGenome' => $effectiveGenome,
+            'activeEids' => $activeEids,
+        ];
+    }
+
+    public function reevaluateContext()
+    {
+        if (!isset($this->config)) {
+            return;
+        }
+
+        if ($this->reevaluatingContext) {
+            return;
+        }
+
+        $this->reevaluatingContext = true;
+
+        $this->setActiveAndEntryKeyStates();
+        $result = $this->generateEffectiveGenome($this->configKeyStates['experiments'], $this->genomes);
+
+        $this->effectiveGenome = $result['effectiveGenome'];
+        $this->activeEids = $result['activeEids'];
+
+        $this->activeKeys = [];
+        $this->activeVariants = [];
+
+        foreach($this->configKeyStates['experiments'] as $expKeyStates) {
+            $active = $expKeyStates['active'];
+            if ($active) {
+                foreach($active as $key) {
+                    $this->activeKeys[] = $key;
+                }
+                $pruned = prune($this->effectiveGenome, $active);
+                foreach($pruned as $key => $value) {
+                    $this->activeVariants[] = $key . ':' . 'hashCode';
+                }
+            }
+        }
+
+        $this->context->set('keys.active', $this->activeKeys);
+        $this->context->set('variants.active', $this->activeVariants);
+
+        emit(EFFECTIVE_GENOME_UPDATED, $this->effectiveGenome);
+
+        foreach($this->subscriptions as $listener) {
+            $listener($this->effectiveGenome, $this->config);
+        }
+
+        $this->reevaluatingContext = false;
+    }
+
+    public function initialize(EvolvContext $context)
+    {
+        if ($this->initialized) {
+            throw new \Exception('Evolv: The store has already been initialized.');
+        }
+
+        $this->context = $context;
+        $this->initialized = true;
+
+        $this->pull();
+
+        waitFor(CONTEXT_CHANGED, function() {
+            $this->reevaluateContext();
+        });
+    }
+
+    private function setConfigLoadedKeys($exp)
+    {
+        $clean = $exp;
+        unset($clean['id']);
+
+        $expLoaded = [];
+        $expMap = [
+            'loaded' => &$expLoaded
+        ];
+
+        $this->configKeyStates['experiments'][$exp['id']] = &$expMap;
+
+        $keys = flattenKeys($clean, function($key) {
+            return strpos($key, '_') !== 0 || $key === '_values' || $key === '_initializers';
+        });
+
+        $filteredKeys = array_filter($keys, function($key) {
+            return endsWith($key, '_values') || endsWith($key, '_initializers');
+        });
+
+        foreach($filteredKeys as $key) {
+            $cleanKey = str_replace(['._values', '._initializers'], '', $key);
+            if (!in_array($cleanKey, $expLoaded)) {
+                $expLoaded[] = $cleanKey;
+            }
+        }
+    }
+
+    private function updateConfig(array $value)
+    {
+        $this->config = $value;
+        $this->configFailed = false;
+
+        if (isset($config['_client'])) {
+            $clientContext = $config['_client'];
+        }
+
+        foreach ($value['_experiments'] as $exp) {
+            $this->setConfigLoadedKeys($exp);
+        }
+    }
+
+    private function updateGenome(array $value)
+    {
+        $allocs = [];
+        $exclusions = [];
+
+        $this->allocations = $value;
+
+        $this->genomeFailed = false;
+
+        foreach($value as $alloc) {
+            $clean = $alloc;
+            unset($clean['genome']);
+            unset($clean['audience_query']);
+
+            $allocs[] = $clean;
+
+            if ($clean['excluded']) {
+                $exclusions[] = $clean['eid'];
+                return;
+            }
+
+            $this->genomes[$clean['eid']] = $alloc['genome'];
+            
+            $expLoaded = [];
+            $expMap = [
+                'loaded' => &$expLoaded
+            ];
+
+            $this->genomeKeyStates['experiments'][$clean['eid']] = &$expMap;
+
+            $keys = flattenKeys($alloc['genome'], function($key) {
+                return !startsWith($key, '_');
+            });
+
+            foreach($keys as $key) {
+                $expLoaded[] = $key;
+            }
+
+            $this->context->set('experiments.allocations', $allocs);
+            $this->context->set('experiments.exclusions', $exclusions);
+        }
+    }
+
+    private function update($config, $allocation)
+    {
+        $this->updateConfig($config);
+        $this->updateGenome($allocation);
+
+        $this->reevaluateContext();
+    }
+
+    private function pull()
+    {
+        $allocationUrl = $this->endpoint . 'v1/' . $this->environment . '/' . $this->context->uid . '/allocations';
+        $configUrl = $this->endpoint . 'v1/' . $this->environment . '/' . $this->context->uid . '/configuration.json';
+
+        $arr_location = $this->httpClient->request($allocationUrl);
+        $arr_config = $this->httpClient->request($configUrl);
+
         $arr_config = json_decode($arr_config, true);
+        $arr_location = json_decode($arr_location, true);
 
         $this->genomeKeyStates = [
             'needed' => [],
@@ -139,367 +425,42 @@ class Store
             'experiments' => [],
         ];
 
-        array_push($this->genomeKeyStates['experiments'], $arr_location);
-
-        foreach ($arr_config['_experiments'] as $key => $v) {
-
-            array_push($this->configKeyStates['experiments'], $v);
-
-        }
-       // $this->print_r($this->configKeyStates['experiments']);
-
+        $this->update($arr_config, $arr_location);
     }
 
-    /**
-     * This is a summary
-     * Check all active keys that start with the specified prefix.
-     *
-     * @param string $lisener function for active keys for get and check.
-     *
-     */
-
-    public function getActiveKeys()
+    public function getActiveKeys(string $prefix = null)
     {
-
-        $predicate = new Predicate();
-
-        $configKeyStates = $this->configKeyStates;
-
-        $context = $this->localContext();
-        //$this->print_r( $context);
-
-        $this->keys = $predicate->evaluate($context, $configKeyStates);
-
-        return $this->keys;
+        return array_filter($this->activeKeys, function($key) use ($prefix) {
+            return !$prefix || startsWith($key, $prefix);
+        });
     }
 
-    /**
-     * This is a summary
-     * Get the value of a specified key.
-     *
-     * @param string $key The key of the value to retrieve.
-     *
-     */
-    public function get($key)
+    public function getValue(string $key, $effectiveGenome) {
+        return getValueForKey($key, $effectiveGenome);
+    } 
+
+    public function activeEntryPoints()
     {
+        $eids = [];
 
-        $config = $this->genomeKeyStates;
-
-        $predicate = new Predicate();
-
-        $this->value = $predicate->valueFromKey($key, $config);
-
-        $this->get[$key] = $this->value;
-
-        return $this->get;
-
-    }
-
-    /**
-     * This is a summary
-     * Get the configuration for a specified key.
-     *
-     * @param string $key The key to retrieve the configuration for.
-     *
-     */
-    function getConfig($key)
-    {
-
-        $config = $this->configKeyStates;
-
-        $predicate = new Predicate();
-
-        $this->value = $predicate->valueFromKey($key, $config);
-
-        return $this->value;
-    }
-
-    /**
-     * @ignore
-     */
-    public function localContext()
-    {
-        $this->localContext = Context::$localContext;
-
-        if (is_array($this->data) && !empty($this->data)) {
-
-            $this->localContext = Context::pushToArray($this->data, $this->localContext, true);
-
-        }
-
-        return $this->localContext;
-
-    }
-
-    /**
-     * @ignore
-     */
-    public function remoteContext()
-    {
-
-        $this->remoteContext = Context::$remoteContext;
-
-        $this->remoteContext = $this->revaluateContext($this->remoteContext);
-
-        if (is_array($this->data) && !empty($this->data)) {
-
-            $this->remoteContext = Context::pushToArray($this->data, $this->remoteContext, false);
-
-        }
-        return $this->remoteContext;
-
-    }
-
-    /**
-     * @ignore
-     */
-    public function setActiveAndEntryKeyStates()
-    {
-        /*        $predicate = new Predicate();
-
-                $configKeyStates = $this->configKeyStates;
-
-                $context = $this->remoteContext();
-
-                $keys = $predicate->evaluate($context, $configKeyStates);
-                */
-    }
-
-    /**
-     * @ignore
-     */
-    public function getUTF16CodeUnits($string)
-    {
-        $string = substr(json_encode($string), 1, -1);
-
-        preg_match_all("/\\\\u[0-9a-fA-F]{4}|./mi", $string, $matches);
-
-        return $matches[0];
-    }
-
-    /**
-     * @ignore
-     */
-    public function JS_StringLength($string)
-    {
-        return count($this->getUTF16CodeUnits($string));
-    }
-
-    /**
-     * @ignore
-     */
-    public function JS_charCodeAt($string, $index)
-    {
-        $utf16CodeUnits = $this->getUTF16CodeUnits($string);
-
-        $unit = $utf16CodeUnits[$index];
-
-        if (strlen($unit) > 1) {
-
-            $hex = substr($unit, 2);
-
-            return hexdec($hex);
-
-        } else {
-
-            return ord($unit);
-        }
-    }
-
-    /**
-     * @ignore
-     */
-    function uniord($u) {
-        $k = mb_convert_encoding($u, 'UCS-2LE', 'UTF-8');
-        $k1 = ord(substr($k, 0, 1));
-        $k2 = ord(substr($k, 1, 1));
-        return $k2 * 256 + $k1;
-    }
-
-    /**
-     * @ignore
-     */
-    public function hashCode($string)
-    {
-        $ret = 0;
-
-        if (is_array($string)) {
-
-            $string = json_encode($string);
-
-        }
-
-
-        $converted = iconv('UTF-8', 'UTF-16LE', $string);
-
-        for ($i = 0; $i < iconv_strlen($converted, 'UTF-16LE'); $i++) {
-
-            $character = iconv_substr($converted, $i, 1, 'UTF-16LE');
-
-            $codeUnits = unpack('v', $character);
-
-            foreach ($codeUnits as $codeUnit) {
-
-                $ret = (31 * $ret + $codeUnit) << 2;
+        foreach($this->configKeyStates['experiments'] as $eid => $expKeyStates) {
+            $entry = $expKeyStates['entry'];
+            if ($entry && count($entry)) {
+                $eids[] = $eid;
             }
         }
 
-/*        for ($i = 0; $i < $this->JS_StringLength($string); $i++) {
-
-            $ret = (31 * $ret + $this->JS_charCodeAt($string, $i));
-
-        }
-
-        for ($i = 0; $i < strlen($converted); $i += 2) {
-            $codeUnit = ord($converted[$i]) + (ord($converted[$i + 1]) << 0);
-            $ret = $codeUnit . PHP_EOL;
-        }*/
-
-        return $ret;
+        return $eids;
     }
 
-    /**
-     * Reevaluates the current context.
-     */
-    public function revaluateContext($context)
+    public function createSubscribable(string $functionName, $key, callable $listener = null)
     {
-        $revoluate = [
-            'keys' => ['active' => []],
-            'variants' => ['active' => []],
-        ];
-
-        $predicate = new Predicate();
-
-        $this->setActiveAndEntryKeyStates();
-
-        $configKeyStates = $this->configKeyStates;
-
-        $keys = $predicate->evaluate($context, $configKeyStates);
-
-        $revoluate['keys']['active'] += $keys;
-
-        if (empty($context) && !is_array($context)) {
-
-            return false;
-
+        if (isset($listener)) {
+            $this->subscriptions[] = function($effectiveGenome, $config) use ($listener, $functionName, $key) {
+                $listener(call_user_func_array([$this, $functionName], [$key, $effectiveGenome, $config]));
+            };
+        } else {
+            return call_user_func_array([$this, $functionName], [$key, $this->effectiveGenome, $this->config]);
         }
-
-        foreach ($keys as $key => $val) {
-
-            $value = $predicate->valueFromKeyRevoluate($val, $this->genomeKeyStates);
-
-            $vals[] = $val . ":" . $this->hashCode($value);
-        }
-        $revoluate['variants']['active'] += $vals;
-
-        return $revoluate;
     }
-
-    /**
-     * @ignore
-     */
-    public function evaluatePredicates($context, $config)
-    {
-
-        if (empty($config) || count($config) == 0) {
-
-            echo "Config empty!";
-
-            return false;
-
-        }
-
-        $predicate = new Predicate();
-
-        $predicates = $predicate->getPredicate($context, $config);
-
-        $predicate->evaluate($context, $predicates);
-
-    }
-
-    /**
-     * This is a summary
-     * Send an event to the events endpoint.
-     *
-     * @param string $type The type associated with the event.
-     * @param object $data Any metadata to attach to the event.
-     * @param boolean $flash If true, the event will be sent immediately.
-     *
-     */
-    public function emit($type, $data, $flash = false)
-    {
-
-        $environment = $this->environment;
-
-        $endpoint = $this->endpoint;
-
-        $uid = $this->uid;
-
-        $data = [
-            'type' => $type,
-            'metadata' => $data,
-            'uid' => $uid,
-            'boolean' => $flash,
-            'time' => time() * 1000,
-        ];
-
-        $this->data[] = [
-            'type' => $type,
-            'timestamp' => time() * 1000,
-            //$type => $flash,
-        ];
-        if ($flash == false) {
-
-            $this->flesh_data[] = $data;
-        }
-
-        $beacon = new Beacon();
-
-        $beacon->emit($environment, $endpoint, $data, $this->flesh_data, $flash);
-
-    }
-
-    /**
-     * This is a summary
-     * Force all beacons to transmit.
-     *
-     */
-    public function flush()
-    {
-
-
-    }
-
-    /**
-     * @ignore
-     */
-    public function print_r($arr)
-    {
-        echo "<pre>";
-        print_r($arr);
-        echo "</pre>";
-    }
-
-    /**
-     * @ignore
-     */
-    public function initialized($context, $uid, $endpoint)
-    {
-
-        if ($this->initialized) {
-
-
-            echo 'Evolv: The store has already been initialized.';
-
-        }
-
-        $context = $this->context;
-
-    }
-
-
 }
-
-
-
-
